@@ -1,0 +1,51 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.coverage
+*.egg-info/
+dist/
+build/
+
+# Env + secrets
+.env
+
+# MLflow
+mlruns/
+mlflow.db
+
+# Raw data (DVC-tracked, not in git — rule C41)
+data/raw/*.txt
+data/raw/*.zip
+data/processed/*.parquet
+data/processed/*.csv
+
+# Model artefacts (joblib / .pt too large for git; HF Space copies separately)
+models/*.pt
+models/*.pkl
+models/*.json
+
+# HF Space artefacts (committed in hf_space/, not in main repo root)
+hf_space/*.pt
+hf_space/*.pkl
+hf_space/*.json
+hf_space/*.txt
+
+# Private/local-only (rule C30)
+.claude/
+CLAUDE.md
+learning_log.md
+carry.md
+MANUAL_TASKS.md
+explain.md
+
+# Generated reports HTML / large PNGs (kept as artefacts, not in repo)
+reports/drift/*.html
+
+# Lockfile (working file, not committed)
+requirements-lock.txt
+
+# Original spec (we keep it locally as reference; not part of the codebase)
+PM1-Predictive-Maintenance-daily-guide.md

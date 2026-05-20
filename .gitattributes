@@ -1,0 +1,12 @@
+# Generated artefacts — exclude from GitHub Linguist language stats
+reports/figures/*.png linguist-generated=true
+reports/results.json  linguist-generated=true
+mlruns/**             linguist-generated=true
+models/*.pt           linguist-generated=true filter=lfs diff=lfs merge=lfs -text
+models/*.pkl          linguist-generated=true
+models/*.json         linguist-generated=true
+notebooks/*.ipynb     linguist-language=Python
+
+# Normalise line endings
+* text=auto eol=lf
+*.ps1 text eol=crlf
