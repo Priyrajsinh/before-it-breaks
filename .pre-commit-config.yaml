@@ -10,7 +10,10 @@ repos:
     hooks: [{id: flake8}]
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.13.0
-    hooks: [{id: mypy, args: ["--ignore-missing-imports"]}]
+    hooks:
+      - id: mypy
+        args: ["--ignore-missing-imports"]
+        additional_dependencies: [types-PyYAML, pydantic, pandera, numpy]
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.10
     hooks:
