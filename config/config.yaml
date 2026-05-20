@@ -1,0 +1,76 @@
+seed: 42
+
+data:
+  dataset: "NASA CMAPSS FD001"
+  raw_train: "data/raw/train_FD001.txt"
+  raw_test: "data/raw/test_FD001.txt"
+  raw_rul: "data/raw/RUL_FD001.txt"
+  processed_train: "data/processed/train.parquet"
+  processed_val: "data/processed/val.parquet"
+  processed_test: "data/processed/test.parquet"
+  sequence_length: 30
+  max_rul: 125
+  seed: 42
+  drop_columns: [sensor_1, sensor_5, sensor_6, sensor_10, sensor_16, sensor_18, sensor_19]
+  train_engine_ids: [1, 80]   # engines 1..80 inclusive
+  val_engine_ids: [81, 100]   # engines 81..100 inclusive
+
+model:
+  type: "LSTM"
+  input_size: 17
+  hidden_size: 128
+  num_layers: 2
+  dropout: 0.2
+  batch_size: 256
+  epochs: 50
+  learning_rate: 0.001
+  clip_grad_norm: 1.0
+  early_stopping_patience: 10
+  scheduler_patience: 5
+  scheduler_factor: 0.5
+
+evaluation:
+  rmse_threshold: 30.0   # rule C37 — hard CI gate
+  health_status_thresholds:
+    healthy_min: 80
+    warning_min: 40
+    # below warning_min = Critical
+
+shap:
+  n_background_samples: 100   # rule C50
+
+monitoring:
+  psi_threshold: 0.2   # rule C42
+  drift_window_size: 500
+
+api:
+  rate_limit_predict: "60/minute"
+  max_payload_mb: 1
+  max_batch_size: 50
+  cors_origins:
+    - "http://localhost:8501"
+    - "http://localhost:7860"
+  trusted_hosts:
+    - "localhost"
+    - "127.0.0.1"
+    - "*.hf.space"
+    - "*.streamlit.app"
+
+ui:
+  glassmorphism: true   # rule C44
+  stream_pipeline: true # rule C43
+  primary_color: "#0ea5e9"     # industrial cyan
+  secondary_color: "#6366f1"   # indigo
+
+mlflow:
+  experiment_name: "pm1_before_it_breaks"
+  tracking_uri: "file:./mlruns"
+
+docker:
+  image_name: "before-it-breaks"
+
+paths:
+  models_dir: "models/"
+  reports_dir: "reports/"
+  figures_dir: "reports/figures/"
+  results_json: "reports/results.json"
