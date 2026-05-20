@@ -2,7 +2,21 @@ version: 2
 updates:
   - package-ecosystem: "pip"
     directory: "/"
-    schedule: {interval: "weekly"}
+    schedule: {interval: "weekly", day: "monday"}
+    open-pull-requests-limit: 3
+    ignore:
+      # Avoid major-version bumps on ML packages mid-project
+      - dependency-name: "torch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pandas"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "shap"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "gradio"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "mlflow"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule: {interval: "weekly"}
+    schedule: {interval: "weekly", day: "monday"}
+    open-pull-requests-limit: 2
