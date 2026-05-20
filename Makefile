@@ -3,6 +3,23 @@
 PY := venv/Scripts/python
 PIP := venv/Scripts/pip
 
+# Unfixable CVEs (no fix version published as of 2026-05-20). See MANUAL_TASKS.md.
+PIP_AUDIT_IGNORE := \
+  --ignore-vuln PYSEC-2025-210 \
+  --ignore-vuln PYSEC-2025-194 \
+  --ignore-vuln PYSEC-2025-196 \
+  --ignore-vuln PYSEC-2025-195 \
+  --ignore-vuln PYSEC-2025-193 \
+  --ignore-vuln PYSEC-2025-192 \
+  --ignore-vuln PYSEC-2026-139 \
+  --ignore-vuln PYSEC-2025-191 \
+  --ignore-vuln PYSEC-2025-197 \
+  --ignore-vuln PYSEC-2025-189 \
+  --ignore-vuln PYSEC-2025-190 \
+  --ignore-vuln PYSEC-2024-274 \
+  --ignore-vuln PYSEC-2024-271 \
+  --ignore-vuln PYSEC-2024-277
+
 install:
 	$(PIP) install -U pip wheel
 	$(PIP) install -r requirements.txt -r requirements-dev.txt
@@ -33,7 +50,7 @@ streamlit:
 	$(PY) -m streamlit run src/dashboard/streamlit_app.py
 
 audit:
-	$(PY) -m pip_audit -r requirements.txt
+	$(PY) -m pip_audit -r requirements.txt $(PIP_AUDIT_IGNORE)
 	$(PY) -m detect_secrets scan --baseline .secrets.baseline
 	$(PY) -m bandit -r src/ -ll -ii
 
@@ -45,7 +62,7 @@ ci:
 	$(PY) -m bandit -r src/ -ll -ii
 	$(PY) -m radon cc src/ -nc
 	$(PY) -m interrogate src/ --fail-under=80
-	$(PY) -m pip_audit -r requirements.txt
+	$(PY) -m pip_audit -r requirements.txt $(PIP_AUDIT_IGNORE)
 	$(PY) -m detect_secrets scan --baseline .secrets.baseline
 	$(PY) -m pytest tests/ -v --tb=short --cov=src --cov-fail-under=70
 	@echo "All CI gates green. Safe to git push."
