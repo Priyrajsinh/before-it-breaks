@@ -50,5 +50,15 @@ jobs:
         run: pip-audit -r requirements.txt ${{ env.PIP_AUDIT_IGNORE }}
       - name: detect-secrets
         run: detect-secrets scan --baseline .secrets.baseline
+      # Download CMAPSS FD001 raw files so data-dependent tests can run.
+      # The script skips files already present and matching their SHA-256 sidecars.
+      # continue-on-error: unit tests use synthetic fixtures; a missing GitHub
+      # release asset does not break the test suite.  Once the release is published
+      # (see MANUAL_TASKS.md) this can be hardened to fail-on-error.
+      - name: download-cmapss-data
+        run: python scripts/download_cmapss.py
+        continue-on-error: true
+        env:
+          CMAPSS_MIRROR_URL: ${{ vars.CMAPSS_MIRROR_URL || '' }}
       - name: pytest
         run: pytest tests/ -v --tb=short --cov=src --cov-fail-under=70
