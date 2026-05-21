@@ -97,17 +97,16 @@ def main() -> None:
     try:
         _download_and_extract(url, dest_dir)
     except Exception as exc:
-        print(f"ERROR: download failed: {exc}", file=sys.stderr)
+        # Best-effort: current unit tests use synthetic fixtures and don't need
+        # real files.  A hard failure here would only matter once a GitHub
+        # release asset is published (see MANUAL_TASKS.md Day 2 section).
+        print(f"WARNING: CMAPSS download skipped — {exc}", file=sys.stderr)
         print(
-            "Manual fallback:\n"
-            "  1. Download CMAPSSData.zip from the NASA Prognostics Center:\n"
-            "     https://www.nasa.gov/.../pcoe-data-set-repository/\n"
-            "  2. Extract train_FD001.txt, test_FD001.txt, RUL_FD001.txt"
-            " to data/raw/\n"
-            "  3. Re-run this script to verify checksums.",
+            "  To enable: publish a GitHub release tagged v0.1-data with\n"
+            "  CMAPSSData-FD001.zip attached (see MANUAL_TASKS.md).",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return
 
     print("Verifying checksums …", flush=True)
     _verify(dest_dir)
