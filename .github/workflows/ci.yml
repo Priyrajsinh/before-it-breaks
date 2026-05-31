@@ -50,5 +50,13 @@ jobs:
         run: pip-audit -r requirements.txt ${{ env.PIP_AUDIT_IGNORE }}
       - name: detect-secrets
         run: detect-secrets scan --baseline .secrets.baseline
+      # Download CMAPSS FD001 raw files for data-dependent tests.
+      # Best-effort: script exits 0 if the release asset is not yet published.
+      # Once the v0.1-data release is live (see MANUAL_TASKS.md), real files
+      # will be present and @pytest.mark.needs_data tests will run for real.
+      - name: download-cmapss-data
+        run: python scripts/download_cmapss.py
+        env:
+          CMAPSS_MIRROR_URL: ${{ vars.CMAPSS_MIRROR_URL || '' }}
       - name: pytest
         run: pytest tests/ -v --tb=short --cov=src --cov-fail-under=70
