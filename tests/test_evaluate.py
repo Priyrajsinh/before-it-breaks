@@ -1,11 +1,16 @@
-"""Unit tests for src/model/evaluate.py metrics (rule C37 metric path)."""
+"""Unit tests for src/model/evaluate.py — metrics + plots (rule C37 path)."""
 
 import json
 
 import numpy as np
 import pandas as pd
 
-from src.model.evaluate import evaluate, nasa_score
+from src.model.evaluate import (
+    evaluate,
+    nasa_score,
+    plot_degradation_curves,
+    plot_rul_scatter,
+)
 from src.model.lstm import RULPredictor
 
 
@@ -79,3 +84,28 @@ def test_evaluate_writes_results_json(tmp_path) -> None:
         assert key in saved
     assert saved["test_set_size"] == 2
     assert result["test_set_size"] == 2
+
+
+def test_scatter_plot_saved(tmp_path) -> None:
+    """plot_rul_scatter writes a non-empty PNG."""
+    result = {
+        "rmse": 12.3,
+        "per_engine_predictions": [
+            {"predicted_rul": 30.0, "actual_rul": 28.0},
+            {"predicted_rul": 50.0, "actual_rul": 60.0},
+        ],
+    }
+    out = tmp_path / "scatter.png"
+    plot_rul_scatter(result, out)
+    assert out.exists()
+    assert out.stat().st_size > 0
+
+
+def test_degradation_plot_saved(tmp_path) -> None:
+    """plot_degradation_curves writes a non-empty PNG for 2 sample engines."""
+    model = RULPredictor({"model": _model_cfg()})
+    cfg = {"data": {"sequence_length": 30, "seed": 42}}
+    out = tmp_path / "degradation.png"
+    plot_degradation_curves(_two_engine_df(), model, cfg, out, n=2)
+    assert out.exists()
+    assert out.stat().st_size > 0
