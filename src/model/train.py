@@ -6,6 +6,7 @@ C47) and writes reports/figures/training_loss_curve.png (rule C15).
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import matplotlib
@@ -76,6 +77,11 @@ def train_model(config: dict) -> dict:
     figures_dir = Path(config["paths"]["figures_dir"])
     curve_path = figures_dir / "training_loss_curve.png"
 
+    # MLflow 3.13+ raises on the filesystem tracking backend unless explicitly
+    # opted in. We keep the file store (file:./mlruns) on purpose for a portable,
+    # zero-infra demo, so opt out of the hard exception. The CI runner installs a
+    # newer MLflow than the local lockfile, which is why this only bites in CI.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
     with mlflow.start_run():
