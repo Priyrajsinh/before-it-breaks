@@ -1,13 +1,14 @@
-"""Day 4 evaluation: RMSE / MAE / NASA Score on the official CMAPSS test set.
+"""Day 4 evaluation: RMSE / MAE / NASA Score + the README money visuals.
 
-Predicts the last-window RUL per test engine and writes ``reports/results.json``
-with per-engine predictions for downstream UI. Rule C37 — the test RMSE must
-stay <= 30 cycles (wired as a CI gate on Day 9).
+Predicts the last-window RUL per test engine, writes ``reports/results.json``,
+and renders the predicted-vs-actual scatter (rule C37 — RMSE must stay <= 30)
+plus per-engine degradation curves with the critical zone shaded.
 """
 
 import json
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import pandas as pd
 
@@ -71,3 +72,71 @@ def evaluate(model: RULPredictor, test_df: pd.DataFrame, config: dict) -> dict:
         json.dump(result, fh, indent=2)
     logger.info(f"evaluation: RMSE={rmse:.2f} MAE={mae:.2f} NASA={score:.1f}")
     return result
+
+
+def plot_rul_scatter(result: dict, output: Path) -> None:
+    """Predicted-vs-actual RUL scatter colour-coded by abs error (README visual)."""
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plt.switch_backend("Agg")
+    preds = np.array([p["predicted_rul"] for p in result["per_engine_predictions"]])
+    actuals = np.array([p["actual_rul"] for p in result["per_engine_predictions"]])
+    errs = np.abs(preds - actuals)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig, ax = plt.subplots(figsize=(7, 7))
+    sc = ax.scatter(actuals, preds, c=errs, cmap="RdYlBu_r", s=60, edgecolor="black")
+    mx = max(actuals.max(), preds.max()) + 5
+    ax.plot([0, mx], [0, mx], "k--", alpha=0.5, label="perfect prediction")
+    ax.set_xlabel("Actual RUL (cycles)")
+    ax.set_ylabel("Predicted RUL (cycles)")
+    ax.set_title(f"RUL prediction vs actual — RMSE={result['rmse']:.1f}")
+    fig.colorbar(sc, ax=ax, label="absolute error")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output, dpi=120)
+    plt.close(fig)
+
+
+def plot_degradation_curves(
+    test_df: pd.DataFrame,
+    model: RULPredictor,
+    config: dict,
+    output: Path,
+    n: int = 5,
+) -> None:
+    """5 random test engines: true RUL solid blue, predicted dashed, zone shaded."""
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    plt.switch_backend("Agg")
+    seq = config["data"]["sequence_length"]
+    rng = np.random.default_rng(config["data"]["seed"])
+    chosen = rng.choice(test_df["engine_id"].unique(), size=n, replace=False)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(n, 1, figsize=(10, 2.2 * n), sharex=False)
+    for ax, engine_id in zip(axes, chosen):
+        eng = (
+            test_df[test_df["engine_id"] == engine_id]
+            .sort_values("cycle")
+            .reset_index(drop=True)
+        )
+        if len(eng) < seq:
+            continue
+        feats = eng[FEATURE_COLS].values.astype(np.float32)
+        preds = []
+        for i in range(seq - 1, len(eng)):
+            x = np.expand_dims(feats[i - seq + 1 : i + 1], 0)
+            preds.append(float(model.predict(x)[0]))
+        cycles = eng["cycle"].values[seq - 1 :]
+        true_rul = eng["rul"].values[seq - 1 :]
+        ax.axhspan(0, 40, color="red", alpha=0.1, label="critical zone")
+        ax.plot(cycles, true_rul, color="#0ea5e9", label="true RUL")
+        ax.plot(cycles, preds, color="#f97316", linestyle="--", label="predicted RUL")
+        ax.set_title(f"Engine {int(engine_id)}")
+        ax.set_xlabel("cycle")
+        ax.set_ylabel("RUL")
+        ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(output, dpi=120)
+    plt.close(fig)
