@@ -1,0 +1,42 @@
+# Keep the build context small and the image free of dev-only files.
+# NOTE: do NOT ignore requirements.txt, src/, config/, models/,
+# data/processed/, or reports/results.json — the Dockerfile copies these.
+
+# VCS + CI
+.git/
+.github/
+.gitignore
+.gitattributes
+
+# Virtualenv / caches
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.pytest_cache/
+.coverage
+*.egg-info/
+
+# Dev-only / not used at runtime
+tests/
+notebooks/
+hf_space/
+scripts/
+.pre-commit-config.yaml
+requirements-dev.txt
+.secrets.baseline
+
+# Data not needed at runtime
+data/raw/
+mlruns/
+mlflow.db
+
+# Reports: keep results.json (copied explicitly), drop heavy figures + HTML
+reports/figures/
+reports/drift/
+
+# Local-only docs / config
+.claude/
+.dvc/
+*.md
+PM1-Predictive-Maintenance-daily-guide.md
