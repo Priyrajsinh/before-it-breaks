@@ -12,6 +12,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from src.config import load_config
 from src.data.dataset import CMAPSSDataset
@@ -28,6 +31,7 @@ from src.model.predict import ModelServer, _health_status, _nl_summary
 
 logger = get_logger(__name__)
 cfg = load_config("config/config.yaml")
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -53,6 +57,19 @@ app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=cfg["api"]["trusted_hosts"],
 )
+app.state.limiter = limiter
+_rl_handler: Any = _rate_limit_exceeded_handler
+app.add_exception_handler(RateLimitExceeded, _rl_handler)
+
+
+@app.middleware("http")
+async def content_length_guard(request: Request, call_next: Any) -> Any:
+    """Reject requests whose Content-Length exceeds the configured cap."""
+    max_bytes = cfg["api"]["max_payload_mb"] * 1024 * 1024
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > max_bytes:
+        return JSONResponse({"detail": "payload too large"}, status_code=413)
+    return await call_next(request)
 
 
 @app.exception_handler(PredictionError)
@@ -87,6 +104,7 @@ def health(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/v1/predict", response_model=PredictResponse)
+@limiter.limit(cfg["api"]["rate_limit_predict"])
 def predict(request: Request, payload: PredictRequest) -> dict[str, Any]:
     """Run a single-engine RUL prediction with drift detection."""
     srv: ModelServer = request.app.state.server
@@ -94,6 +112,7 @@ def predict(request: Request, payload: PredictRequest) -> dict[str, Any]:
 
 
 @app.post("/api/v1/predict_batch", response_model=list[PredictResponse])
+@limiter.limit(cfg["api"]["rate_limit_predict"])
 def predict_batch(
     request: Request, payload: list[PredictRequest]
 ) -> list[dict[str, Any]]:
