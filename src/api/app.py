@@ -1,6 +1,7 @@
 """FastAPI application — RUL prediction service (rules C36, C39, C42, C45, C48)."""
 
 import json
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -12,6 +13,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_client import Counter, Gauge, Histogram
+from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -61,6 +64,23 @@ app.state.limiter = limiter
 _rl_handler: Any = _rate_limit_exceeded_handler
 app.add_exception_handler(RateLimitExceeded, _rl_handler)
 
+# Prometheus metrics — rule C20 (underscores), C22 (.set for Gauge), C42
+SENSOR_DRIFT_TOTAL = Counter(
+    "sensor_drift_total",
+    "Predictions where at least one sensor was out-of-range",
+)
+PREDICTIONS_SERVED_TOTAL = Counter(
+    "predictions_served_total", "Total single-engine prediction calls served"
+)
+INFERENCE_LATENCY_SECONDS = Histogram(
+    "inference_latency_seconds", "Inference call latency in seconds"
+)
+RUL_PREDICTION_GAUGE = Gauge(
+    "rul_prediction_gauge", "Last predicted RUL value in cycles"
+)
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
+
 
 @app.middleware("http")
 async def content_length_guard(request: Request, call_next: Any) -> Any:
@@ -108,7 +128,14 @@ def health(request: Request) -> dict[str, Any]:
 def predict(request: Request, payload: PredictRequest) -> dict[str, Any]:
     """Run a single-engine RUL prediction with drift detection."""
     srv: ModelServer = request.app.state.server
-    return srv.predict(payload.engine_id, payload.sensor_window)
+    t0 = time.time()
+    result = srv.predict(payload.engine_id, payload.sensor_window)
+    INFERENCE_LATENCY_SECONDS.observe(time.time() - t0)
+    PREDICTIONS_SERVED_TOTAL.inc()
+    RUL_PREDICTION_GAUGE.set(result["predicted_rul"])  # rule C22
+    if any(result["drift_flags"].values()):
+        SENSOR_DRIFT_TOTAL.inc()
+    return result
 
 
 @app.post("/api/v1/predict_batch", response_model=list[PredictResponse])
