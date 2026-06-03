@@ -27,11 +27,14 @@ models/*.pt
 models/*.pkl
 models/*.json
 
-# HF Space artefacts (committed in hf_space/, not in main repo root)
+# HF Space artefacts (deployed to HF only, not committed to the main repo)
 hf_space/*.pt
 hf_space/*.pkl
 hf_space/*.json
+hf_space/*.parquet
 hf_space/*.txt
+# ...except the pinned requirements (rule C13) — tracked in the main repo
+!hf_space/requirements.txt
 
 # Private/local-only (rule C30)
 .claude/
