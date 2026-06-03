@@ -3,7 +3,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import joblib
 import numpy as np
@@ -68,6 +68,7 @@ class ModelServer:
         self.started = time.time()
         self.total_predictions = 0
         self.drift_events = 0
+        self._explainer: Any = None
 
     def _scale_window(self, sensor_window: list[list[float]]) -> np.ndarray:
         """Scale a raw 30×17 sensor window using the training scaler (rule C48)."""
