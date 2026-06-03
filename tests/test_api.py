@@ -5,6 +5,8 @@ from httpx import ASGITransport, AsyncClient
 
 from src.api.app import app
 
+_WINDOW = [[0.0] * 17] * 30
+
 
 class _FakeServer:
     """Minimal stand-in for ModelServer — no real artefacts required."""
@@ -12,6 +14,8 @@ class _FakeServer:
     model: object = object()
     total_predictions: int = 0
     _explainer: object = None
+    engine_ids: list = [1, 2, 3]
+    model_results: dict = {"rmse": 0.0, "mae": 0.0, "nasa_score": 0.0}
 
     def predict(self, engine_id: int, sensor_window: list) -> dict:
         """Return a canned prediction result."""
@@ -56,8 +60,9 @@ async def test_health_returns_200(client: AsyncClient) -> None:
 
 async def test_predict_valid(client: AsyncClient) -> None:
     """POST /predict with valid 30x17 window returns 200 with required fields."""
-    body = {"engine_id": 1, "sensor_window": [[0.0] * 17] * 30}
-    r = await client.post("/api/v1/predict", json=body)
+    r = await client.post(
+        "/api/v1/predict", json={"engine_id": 1, "sensor_window": _WINDOW}
+    )
     assert r.status_code == 200
     j = r.json()
     assert "predicted_rul" in j
@@ -72,11 +77,32 @@ async def test_predict_wrong_shape_422(client: AsyncClient) -> None:
     assert r.status_code == 422
 
 
+async def test_predict_batch_valid(client: AsyncClient) -> None:
+    """POST /predict_batch with 2 valid items returns 200 with 2 results."""
+    body = [{"engine_id": i, "sensor_window": _WINDOW} for i in range(1, 3)]
+    r = await client.post("/api/v1/predict_batch", json=body)
+    assert r.status_code == 200
+    results = r.json()
+    assert len(results) == 2
+    assert all("predicted_rul" in item for item in results)
+
+
 async def test_predict_batch_too_large_422(client: AsyncClient) -> None:
     """POST /predict_batch with >50 items returns 422."""
-    body = [{"engine_id": i, "sensor_window": [[0.0] * 17] * 30} for i in range(60)]
+    body = [{"engine_id": i, "sensor_window": _WINDOW} for i in range(60)]
     r = await client.post("/api/v1/predict_batch", json=body)
     assert r.status_code == 422
+
+
+async def test_content_length_guard_413(client: AsyncClient) -> None:
+    """POST body > 1 MB is rejected with 413 before FastAPI parses it."""
+    over_limit = b"x" * (1024 * 1024 + 1)
+    r = await client.post(
+        "/api/v1/predict",
+        content=over_limit,
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 413
 
 
 async def test_metrics_endpoint(client: AsyncClient) -> None:

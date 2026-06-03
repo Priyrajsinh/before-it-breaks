@@ -3,10 +3,11 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import joblib
 import numpy as np
+import pandas as pd
 
 from src.data.safe_predict import safe_predict
 from src.data.skew_check import FEATURE_COLS, check_skew, psi
@@ -48,7 +49,7 @@ class ModelServer:
     """Model server — loads artefacts once at startup (rules C36, C42, C45, C48)."""
 
     def __init__(self, config: dict) -> None:
-        """Load model, scaler, and training stats.
+        """Load model, scaler, training stats, engine list, and model results.
 
         Raises ModelNotFoundError if any required artefact is missing.
         """
@@ -64,7 +65,12 @@ class ModelServer:
             self.scaler = joblib.load(fh)
         with open(str(stats_path)) as fh:
             self.training_stats: dict = json.load(fh)
-        self.stats_path = stats_path
+        with open(config["paths"]["results_json"]) as fh:
+            self.model_results: dict = json.load(fh)
+        test_df = pd.read_parquet(config["data"]["processed_test"])
+        self.engine_ids: list[int] = sorted(
+            int(e) for e in test_df["engine_id"].unique()
+        )
         self.started = time.time()
         self.total_predictions = 0
         self.drift_events = 0
@@ -114,12 +120,6 @@ class ModelServer:
             "nl_summary": _nl_summary(engine_id, rul, status, None),
             "drift_flags": flags,
         }
-
-    def predict_batch(
-        self, requests: Iterable[tuple[int, list[list[float]]]]
-    ) -> list[dict]:
-        """Run predict() for each (engine_id, window) pair in the iterable."""
-        return [self.predict(eid, w) for eid, w in requests]
 
     def uptime_seconds(self) -> float:
         """Return wall-clock seconds since the server was initialised."""

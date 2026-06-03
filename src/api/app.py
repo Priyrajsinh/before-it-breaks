@@ -1,6 +1,5 @@
 """FastAPI application — RUL prediction service (rules C36, C39, C42, C45, C48)."""
 
-import json
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -28,7 +27,6 @@ from src.data.schemas import (
     PredictResponse,
 )
 from src.exceptions import PredictionError
-from src.explainability.shap_explainer import RULExplainer
 from src.logger import get_logger
 from src.model.predict import ModelServer, _health_status, _nl_summary
 
@@ -173,6 +171,8 @@ def explain(
     request: Request, engine_id: int, payload: PredictRequest
 ) -> dict[str, Any]:
     """Return SHAP-based feature attributions for an engine window."""
+    from src.explainability.shap_explainer import RULExplainer  # deferred: shap ~3.5s
+
     srv: ModelServer = request.app.state.server
     if srv._explainer is None:
         train_df = pd.read_parquet(cfg["data"]["processed_train"])
@@ -205,14 +205,14 @@ def explain(
 
 
 @app.get("/api/v1/engines", response_model=list[int])
-def engines() -> list[int]:
-    """Return sorted list of test engine IDs from the processed test set."""
-    df = pd.read_parquet(cfg["data"]["processed_test"])
-    return sorted(int(e) for e in df["engine_id"].unique())
+def engines(request: Request) -> list[int]:
+    """Return sorted test engine IDs (cached at startup by ModelServer)."""
+    srv: ModelServer = request.app.state.server
+    return srv.engine_ids
 
 
 @app.get("/api/v1/model_info")
-def model_info() -> dict[str, Any]:
-    """Return the contents of reports/results.json (RMSE, MAE, NASA Score)."""
-    with open(cfg["paths"]["results_json"]) as fh:
-        return json.load(fh)
+def model_info(request: Request) -> dict[str, Any]:
+    """Return model evaluation results (cached at startup by ModelServer)."""
+    srv: ModelServer = request.app.state.server
+    return srv.model_results
