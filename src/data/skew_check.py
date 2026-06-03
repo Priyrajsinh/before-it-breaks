@@ -30,13 +30,19 @@ def save_training_stats(X: pd.DataFrame | np.ndarray, path: Path) -> None:
         json.dump(stats, fh, indent=2)
 
 
-def check_skew(x_row: np.ndarray, stats_path: Path) -> dict[str, bool]:
-    """Per-feature out-of-range bool for a single 17-vector (rule C42)."""
-    with open(str(stats_path)) as fh:
-        stats = json.load(fh)
+def check_skew(x_row: np.ndarray, stats: dict | Path) -> dict[str, bool]:
+    """Per-feature out-of-range bool for a single 17-vector (rule C42).
+
+    Pass a pre-loaded ``dict`` to avoid a disk read on every prediction call.
+    """
+    if isinstance(stats, (str, Path)):
+        with open(str(stats)) as fh:
+            stats_dict: dict = json.load(fh)
+    else:
+        stats_dict = stats
     out: dict[str, bool] = {}
     for i, c in enumerate(FEATURE_COLS):
-        s = stats[c]
+        s = stats_dict[c]
         out[c] = bool(x_row[i] < s["min"] or x_row[i] > s["max"])
     return out
 

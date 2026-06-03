@@ -150,7 +150,17 @@ def predict_batch(
             detail=(f"batch size {len(payload)} > {cfg['api']['max_batch_size']}"),
         )
     srv: ModelServer = request.app.state.server
-    return [srv.predict(p.engine_id, p.sensor_window) for p in payload]
+    results = []
+    for p in payload:
+        t0 = time.time()
+        result = srv.predict(p.engine_id, p.sensor_window)
+        INFERENCE_LATENCY_SECONDS.observe(time.time() - t0)
+        PREDICTIONS_SERVED_TOTAL.inc()
+        RUL_PREDICTION_GAUGE.set(result["predicted_rul"])
+        if any(result["drift_flags"].values()):
+            SENSOR_DRIFT_TOTAL.inc()
+        results.append(result)
+    return results
 
 
 # ---------------------------------------------------------------------------

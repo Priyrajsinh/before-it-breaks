@@ -83,7 +83,7 @@ class ModelServer:
 
     def _drift_flags(self, scaled: np.ndarray) -> dict[str, bool]:
         """Return per-feature out-of-range flags for the last cycle (rule C42)."""
-        return check_skew(scaled[-1], self.stats_path)
+        return check_skew(scaled[-1], self.training_stats)
 
     def predict(self, engine_id: int, sensor_window: list[list[float]]) -> dict:
         """Run the full inference pipeline for one engine window."""
