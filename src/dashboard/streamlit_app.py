@@ -411,6 +411,19 @@ def drift_chart(drift_df: pd.DataFrame) -> Figure:
 # --------------------------------------------------------------------------- #
 
 
+def _render_header() -> None:
+    """Render the brand bar shared with the Gradio Space."""
+    st.markdown(
+        '<div class="bib-header"><span class="bib-mark">◆</span>'
+        '<span class="bib-name">Before It Breaks</span>'
+        '<span class="bib-slash">/</span>'
+        '<span class="bib-role">Engine Health Dashboard</span></div>'
+        '<div class="bib-tag">Predictive maintenance for industrial turbofan '
+        "engines · NASA CMAPSS FD001</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _render_health_tab(art: Artifacts) -> None:
     """Tab 1 — recruiter-facing engine health monitor (plain English, rule C19)."""
     left, right = st.columns([1, 2], gap="large")
@@ -487,6 +500,51 @@ def _render_drift_tab(art: Artifacts) -> None:
         st.success("All sensors within a stable distribution — no drift alarm.")
 
 
+HOWITWORKS_MD = """
+### What this does
+An unplanned engine failure mid-operation can cost hundreds of thousands of
+dollars per hour. This tool forecasts how many more operational cycles an engine
+has before failure — its **Remaining Useful Life** — so maintenance is scheduled
+*before it breaks*.
+
+### The pipeline
+```
+Sensor data (21 readings, last 30 cycles)
+  → drop 7 constant sensors          → 17 informative features
+  → scale with the training scaler   → fitted on training engines only (rule C48)
+  → read the degradation trend       → forecast RUL (0 = failure, 125 = healthy)
+  → translate to a health status + the strongest warning signal
+  → monitor per-sensor drift (PSI)   → re-validate before trusting (rule C42)
+```
+
+### Why a piecewise-linear RUL label (cap at 125)
+Raw "cycles-to-failure" labels are noisy in the long healthy phase — an engine at
+cycle 5 and one at cycle 50 of a 200-cycle life both look "very healthy", so the
+model wastes capacity spreading itself over flat early data. Capping the label at
+125 says *everything above 125 is simply healthy*, freeing the model to focus on
+the degradation phase that actually matters (Zheng et al., 2017).
+
+### Why split by engine, not by row
+A random row split leaks future cycles of a training engine into validation — the
+model "validates" on data whose recent history it already memorised. Here engines
+1–80 train, 81–100 validate, and a fully held-out NASA set tests — split **by
+engine**, so no future cycle of any engine ever leaks into training.
+
+### Built by
+Priyrajsinh Parmar ·
+[github.com/Priyrajsinh/before-it-breaks](https://github.com/Priyrajsinh/before-it-breaks)
+"""
+
+
+def _render_how_tab(art: Artifacts) -> None:
+    """Tab 4 — the plain-English method narrative."""
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Test RMSE", f"{art.results['rmse']:.1f} cycles")
+    c2.metric("Test MAE", f"{art.results['mae']:.1f} cycles")
+    c3.metric("NASA Score", f"{art.results['nasa_score']:.0f}")
+    st.markdown(HOWITWORKS_MD)
+
+
 # --------------------------------------------------------------------------- #
 # CSS + entry point
 # --------------------------------------------------------------------------- #
@@ -535,21 +593,8 @@ def _inject_css() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
 
 
-def _render_header() -> None:
-    """Render the brand bar shared with the Gradio Space."""
-    st.markdown(
-        '<div class="bib-header"><span class="bib-mark">◆</span>'
-        '<span class="bib-name">Before It Breaks</span>'
-        '<span class="bib-slash">/</span>'
-        '<span class="bib-role">Engine Health Dashboard</span></div>'
-        '<div class="bib-tag">Predictive maintenance for industrial turbofan '
-        "engines · NASA CMAPSS FD001</div>",
-        unsafe_allow_html=True,
-    )
-
-
 def main() -> None:
-    """Render the dashboard shell — tabs are layered in over the next commits."""
+    """Render the 4-tab *Before It Breaks* dashboard (rules C19, C42, C44)."""
     st.set_page_config(page_title="Before It Breaks", page_icon="🔧", layout="wide")
     _inject_css()
     _render_header()
@@ -569,7 +614,7 @@ def main() -> None:
     with tabs[2]:
         _render_drift_tab(art)
     with tabs[3]:
-        st.info("This view is coming online shortly.")
+        _render_how_tab(art)
 
 
 if __name__ == "__main__":
