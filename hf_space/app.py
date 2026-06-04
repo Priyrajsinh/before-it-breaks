@@ -30,6 +30,8 @@ import numpy as np
 import pandas as pd
 import torch
 from gradio.themes.utils import colors, fonts
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from torch import nn
 
 matplotlib.use("Agg")
@@ -313,8 +315,13 @@ def predict_streaming(engine_id: int) -> Iterator[str]:
     yield _result_html(engine_id, rul, status, pct, top)
 
 
-def warning_chart(engine_id: int):
-    """Tab 2 — per-engine warning-contribution bar chart (light-themed)."""
+def warning_chart(engine_id: int) -> Figure:
+    """Tab 2 — per-engine warning-contribution bar chart (light-themed).
+
+    Uses the thread-safe matplotlib OO API (``Figure`` + ``FigureCanvasAgg``),
+    never the global ``pyplot`` state machine — Gradio runs handlers in worker
+    threads, and pyplot off the main thread can hang the server and leak figures.
+    """
     engine_id = int(engine_id)
     scaled = _scale(_last_window(engine_id))
     scores = _warning_scores(scaled)
@@ -323,8 +330,10 @@ def warning_chart(engine_id: int):
     values = [v for _, v in ordered]
     top_val = max(values) if values else 1.0
 
-    fig, ax = plt.subplots(figsize=(8.2, 0.42 * len(labels) + 1.2), dpi=120)
+    fig = Figure(figsize=(8.2, 0.42 * len(labels) + 1.2), dpi=120)
+    FigureCanvasAgg(fig)
     fig.patch.set_facecolor("#FFFFFF")
+    ax = fig.subplots()
     ax.set_facecolor("#FFFFFF")
     bar_colors = ["#4F46E5" if v == top_val else "#C7CBF7" for v in values]
     ax.barh(labels, values, color=bar_colors, height=0.62, zorder=3)
@@ -552,7 +561,10 @@ with gr.Blocks(title="Before It Breaks — Engine Health Monitor") as demo:
                 with gr.Column(scale=2, min_width=230, elem_classes="panel"):
                     gr.HTML('<div class="section-title">Select engine</div>')
                     engine_dd = gr.Dropdown(
-                        choices=ENGINE_IDS, value=DEFAULT_ENGINE, label="Test engine"
+                        choices=ENGINE_IDS,
+                        value=DEFAULT_ENGINE,
+                        label="Test engine",
+                        filterable=False,  # click-only list, no uncommitted typed value
                     )
                     analyze_btn = gr.Button("Analyze  →", variant="primary")
                     gr.HTML(
@@ -564,7 +576,7 @@ with gr.Blocks(title="Before It Breaks — Engine Health Monitor") as demo:
                     result_out = gr.HTML(PLACEHOLDER_HTML)
             analyze_btn.click(predict_streaming, engine_dd, result_out)
 
-        with gr.Tab("Sensor Analysis"):
+        with gr.Tab("Sensor Analysis") as sensor_tab:
             with gr.Column(elem_classes="panel"):
                 gr.HTML(
                     '<div class="section-title">Sensor contributions</div>'
@@ -579,22 +591,30 @@ with gr.Blocks(title="Before It Breaks — Engine Health Monitor") as demo:
                         value=DEFAULT_ENGINE,
                         label="Engine",
                         scale=2,
+                        filterable=False,
                     )
                     sensor_btn = gr.Button(
                         "Show contributions", variant="primary", scale=1
                     )
                 sensor_plot = gr.Plot()
                 sensor_btn.click(warning_chart, sensor_dd, sensor_plot)
+                # Render lazily when the tab is opened (not at page load) so the
+                # chart never competes with the Tab 1 load event.
+                sensor_tab.select(warning_chart, sensor_dd, sensor_plot)
 
         with gr.Tab("How It Works"):
             with gr.Column(elem_classes="panel"):
                 gr.HTML(STATS_HTML)
                 gr.Markdown(HOWITWORKS_MD)
 
-    # Populate both tabs on load so nothing is blank (rule C28 — driven by inputs).
+    # Populate Tab 1 on load so the dashboard lands non-empty (rule C28 — the
+    # output is driven by the engine selector). The Sensor tab renders on open.
     demo.load(analyze_static, engine_dd, result_out)
-    demo.load(warning_chart, sensor_dd, sensor_plot)
+
+# Enable the queue at module level so streaming generators work regardless of
+# how the host launches the app (HF Spaces may import `demo` directly).
+demo.queue()
 
 
 if __name__ == "__main__":
-    demo.queue().launch(theme=THEME, css=CSS)
+    demo.launch(theme=THEME, css=CSS)
