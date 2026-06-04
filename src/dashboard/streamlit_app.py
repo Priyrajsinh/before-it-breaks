@@ -42,6 +42,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import torch
+from matplotlib.axes import Axes
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from torch import nn
 
 matplotlib.use("Agg")
@@ -274,6 +277,70 @@ def _result_card_html(
 
 
 # --------------------------------------------------------------------------- #
+# Matplotlib charts (thread-safe OO API — never the global pyplot state machine)
+# --------------------------------------------------------------------------- #
+
+
+def _style_axes(ax: Axes, xlabel: str) -> None:
+    """Apply the shared light-theme axis styling to a chart."""
+    ax.set_facecolor("#FFFFFF")
+    for spine in ("top", "right", "left"):
+        ax.spines[spine].set_visible(False)
+    ax.spines["bottom"].set_color("#E5E9F0")
+    ax.tick_params(axis="y", colors=INK, length=0, labelsize=10)
+    ax.tick_params(axis="x", colors="#94A3B8", labelsize=9)
+    ax.set_xlabel(xlabel, color=MUTED, fontsize=10)
+    ax.xaxis.grid(True, color="#EEF2F7", zorder=0)
+    ax.set_axisbelow(True)
+
+
+def warning_chart(scores: dict[str, float], engine_id: int) -> Figure:
+    """Horizontal bar chart of per-sensor warning contributions for one engine."""
+    ordered = sorted(scores.items(), key=lambda kv: kv[1])  # ascending → top wins
+    labels = [SENSOR_LABELS.get(k, k) for k, _ in ordered]
+    values = [v for _, v in ordered]
+    top = max(values) if values else 1.0
+    fig = Figure(figsize=(7.6, 0.42 * len(labels) + 1.0), dpi=120)
+    FigureCanvasAgg(fig)
+    fig.patch.set_facecolor("#FFFFFF")
+    ax = fig.subplots()
+    colours = [ACCENT if v == top else "#C7CBF7" for v in values]
+    ax.barh(labels, values, color=colours, height=0.62, zorder=3)
+    _style_axes(ax, "warning contribution  ·  abnormality × model reliance")
+    ax.set_title(
+        f"What is driving the forecast for engine {engine_id}",
+        color=INK,
+        fontsize=13,
+        fontweight="bold",
+        loc="left",
+        pad=12,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def trend_chart(eng_df: pd.DataFrame, sensors: list[str]) -> Figure:
+    """Stacked line charts of the top warning sensors over the engine's life."""
+    fig = Figure(figsize=(7.6, 5.4), dpi=120)
+    FigureCanvasAgg(fig)
+    fig.patch.set_facecolor("#FFFFFF")
+    axes = fig.subplots(len(sensors), 1, sharex=True)
+    axes = np.atleast_1d(axes)
+    for ax, sensor in zip(axes, sensors):
+        ax.plot(eng_df["cycle"], eng_df[sensor], color=ACCENT, linewidth=1.8, zorder=3)
+        ax.set_facecolor("#FFFFFF")
+        ax.set_ylabel(SENSOR_LABELS.get(sensor, sensor), color=INK, fontsize=10)
+        for spine in ("top", "right"):
+            ax.spines[spine].set_visible(False)
+        ax.grid(True, color="#EEF2F7", zorder=0)
+        ax.set_axisbelow(True)
+        ax.tick_params(colors="#94A3B8", labelsize=9)
+    axes[-1].set_xlabel("operational cycle", color=MUTED, fontsize=10)
+    fig.tight_layout()
+    return fig
+
+
+# --------------------------------------------------------------------------- #
 # Tab renderers
 # --------------------------------------------------------------------------- #
 
@@ -308,6 +375,28 @@ def _render_health_tab(art: Artifacts) -> None:
                 min(val / peak, 1.0),
                 text=f"{SENSOR_LABELS.get(col, col)} — contribution score {val:.2f}",
             )
+
+
+def _render_sensor_tab(art: Artifacts) -> None:
+    """Tab 2 — per-engine sensor trends + warning contributions + headline metrics."""
+    engine = st.selectbox("Engine", art.engine_ids, key="sensor_engine")
+    window = last_window(art.test_df, engine)
+    scores = warning_scores(window, art.stats, art.importance)
+    top3 = [
+        k for k, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:3]
+    ]
+    eng_df = art.test_df[art.test_df["engine_id"] == engine].sort_values("cycle")
+
+    st.markdown("**Top warning sensors over this engine's life**")
+    st.pyplot(trend_chart(eng_df, top3))
+    st.markdown("**Why the model forecast this — per-sensor contributions**")
+    st.pyplot(warning_chart(scores, engine))
+
+    st.markdown("**Held-out test-set performance**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Test RMSE", f"{art.results['rmse']:.1f} cycles")
+    c2.metric("Test MAE", f"{art.results['mae']:.1f} cycles")
+    c3.metric("NASA Score", f"{art.results['nasa_score']:.0f}")
 
 
 # --------------------------------------------------------------------------- #
@@ -387,7 +476,9 @@ def main() -> None:
     )
     with tabs[0]:
         _render_health_tab(art)
-    for tab in tabs[1:]:
+    with tabs[1]:
+        _render_sensor_tab(art)
+    for tab in tabs[2:]:
         with tab:
             st.info("This view is coming online shortly.")
 
