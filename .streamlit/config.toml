@@ -1,0 +1,14 @@
+# Streamlit theme — "Light Console" design tokens shared with the Gradio HF
+# Space (rule C44, realised as the Light Console direction the owner approved).
+# Driving the base palette through the real theme system keeps native widgets
+# (tabs, selectbox, buttons, metrics) on-brand without `!important` CSS hacks.
+[theme]
+base = "light"
+primaryColor = "#4F46E5"
+backgroundColor = "#F7F9FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F172A"
+font = "sans serif"
+
+[server]
+headless = true
