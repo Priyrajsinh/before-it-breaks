@@ -1,3 +1,7 @@
+# Streamlit Community Cloud pulls the slim CPU-only torch wheel (~190 MB) instead
+# of the multi-GB default CUDA build. Harmless locally / in CI (torch already
+# installed there), and the +cpu wheel out-sorts the default for the same version.
+--extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.12.0
 numpy>=2.4.6
 pandas>=2.2

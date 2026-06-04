@@ -10,3 +10,8 @@ notebooks/*.ipynb     linguist-language=Python
 # Normalise line endings
 * text=auto eol=lf
 *.ps1 text eol=crlf
+
+# Deploy branch only: store the 834 KB LSTM as a normal git blob (not LFS) so
+# Streamlit Community Cloud — which clones without pulling LFS — gets the real
+# weights, and app reboots don't burn the repo's LFS bandwidth quota.
+models/lstm_rul.pt -filter -diff -merge -text linguist-generated=true
