@@ -251,6 +251,65 @@ def warning_scores(
     return scores
 
 
+def _result_card_html(
+    engine_id: int, rul: float, status: str, pct: float, top_label: str
+) -> str:
+    """Build the Light-Console result-card HTML for the health tab."""
+    s = STATUS[status]
+    return f"""<div class="bib-card">
+  <span class="bib-pill" style="color:{s['color']};background:{s['tint']};
+        border-color:{s['border']}">
+    <span class="bib-dot" style="background:{s['color']}"></span>{status}</span>
+  <div class="bib-metric">
+    <span class="bib-value" style="color:{s['color']}">{rul:.0f}</span>
+    <span class="bib-unit">cycles<br>remaining</span></div>
+  <div class="bib-track">
+    <div class="bib-fill" style="width:{pct:.0f}%;background:{s['bar']}"></div></div>
+  <div class="bib-sub">{pct:.0f}% of expected service life remaining</div>
+  <p class="bib-summary">Engine <b>{engine_id}</b> is predicted to reach
+     end-of-life in about <b>{rul:.0f} cycles</b>. {ACTION[status]}</p>
+  <div class="bib-signal"><span>Strongest warning signal</span>
+    <span class="bib-chip">{top_label}</span></div>
+</div>"""
+
+
+# --------------------------------------------------------------------------- #
+# Tab renderers
+# --------------------------------------------------------------------------- #
+
+
+def _render_health_tab(art: Artifacts) -> None:
+    """Tab 1 — recruiter-facing engine health monitor (plain English, rule C19)."""
+    left, right = st.columns([1, 2], gap="large")
+    with left:
+        engine = st.selectbox(
+            "Select engine",
+            art.engine_ids,
+            key="health_engine",
+            help="100 unseen NASA test engines from the CMAPSS benchmark.",
+        )
+        st.button("Analyze  →", type="primary", key="health_btn")
+        st.caption("One cycle ≈ one full flight, from takeoff to landing.")
+    with right:
+        window = last_window(art.test_df, engine)
+        rul = predict_rul(art.model, window)
+        status = health_status(rul)
+        pct = min(rul / MAX_RUL * 100.0, 100.0)
+        scores = warning_scores(window, art.stats, art.importance)
+        top_label = SENSOR_LABELS.get(max(scores, key=lambda k: scores[k]), "—")
+        st.markdown(
+            _result_card_html(engine, rul, status, pct, top_label),
+            unsafe_allow_html=True,
+        )
+        st.markdown("**Top contributing signals**")
+        peak = max(scores.values()) or 1.0
+        for col, val in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:3]:
+            st.progress(
+                min(val / peak, 1.0),
+                text=f"{SENSOR_LABELS.get(col, col)} — contribution score {val:.2f}",
+            )
+
+
 # --------------------------------------------------------------------------- #
 # CSS + entry point
 # --------------------------------------------------------------------------- #
@@ -323,7 +382,14 @@ def main() -> None:
         st.error(f"Model artefacts not found. {_DEPLOY_HINT}")
         st.caption(str(exc))
         return
-    st.success(f"Loaded {len(art.engine_ids)} held-out NASA test engines.")
+    tabs = st.tabs(
+        ["Engine Health Monitor", "Sensor Analysis", "Drift Monitoring", "How It Works"]
+    )
+    with tabs[0]:
+        _render_health_tab(art)
+    for tab in tabs[1:]:
+        with tab:
+            st.info("This view is coming online shortly.")
 
 
 if __name__ == "__main__":
