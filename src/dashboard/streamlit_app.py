@@ -254,6 +254,50 @@ def warning_scores(
     return scores
 
 
+def population_stability_index(
+    ref_pct: np.ndarray, edges: np.ndarray, actual: np.ndarray
+) -> float:
+    """PSI of ``actual`` against a fixed training reference binning.
+
+    ``edges`` are the (training) bin edges and ``ref_pct`` the training proportion
+    in each bin. Scoring against the real training histogram — rather than a
+    Gaussian proxy — keeps PSI honest for the discrete/quantised CMAPSS channels.
+    """
+    counts, _ = np.histogram(actual, bins=edges)
+    act_pct = np.clip(counts / max(counts.sum(), 1), PSI_EPS, None)
+    return float(np.sum((act_pct - ref_pct) * np.log(act_pct / ref_pct)))
+
+
+def compute_drift(
+    test_df: pd.DataFrame,
+    drift_ref: dict[str, dict[str, Any]],
+    scope_engine: int | None = None,
+) -> pd.DataFrame:
+    """Per-sensor PSI of a cohort vs the training distribution (rule C42).
+
+    ``scope_engine=None`` uses the whole test fleet; an id restricts the cohort to
+    that engine's cycles. Each sensor is scored against its bundled training
+    histogram (``drift_reference.json``). Returns a frame of plain-English sensor
+    name + PSI, sorted most-drifted first.
+    """
+    frame = (
+        test_df
+        if scope_engine is None
+        else test_df[test_df["engine_id"] == scope_engine]
+    )
+    rows: list[dict[str, Any]] = []
+    for col in FEATURE_COLS:
+        ref = drift_ref[col]
+        ref_pct = np.asarray(ref["ref_pct"], dtype=float)
+        if ref_pct.size < 2:  # constant channel — no drift possible
+            psi = 0.0
+        else:
+            edges = np.array([-np.inf, *ref["edges"], np.inf])
+            psi = population_stability_index(ref_pct, edges, frame[col].to_numpy())
+        rows.append({"sensor": SENSOR_LABELS.get(col, col), "PSI": psi})
+    return pd.DataFrame(rows).sort_values("PSI", ascending=False).reset_index(drop=True)
+
+
 def _result_card_html(
     engine_id: int, rul: float, status: str, pct: float, top_label: str
 ) -> str:
@@ -340,6 +384,28 @@ def trend_chart(eng_df: pd.DataFrame, sensors: list[str]) -> Figure:
     return fig
 
 
+def drift_chart(drift_df: pd.DataFrame) -> Figure:
+    """Per-sensor PSI bars (green/red by threshold) with the 0.2 alarm line."""
+    fig = Figure(figsize=(7.6, 0.42 * len(drift_df) + 1.2), dpi=120)
+    FigureCanvasAgg(fig)
+    fig.patch.set_facecolor("#FFFFFF")
+    ax = fig.subplots()
+    colours = ["#F43F5E" if v > PSI_THRESHOLD else "#10B981" for v in drift_df["PSI"]]
+    ax.barh(drift_df["sensor"], drift_df["PSI"], color=colours, height=0.62, zorder=3)
+    ax.axvline(
+        PSI_THRESHOLD,
+        color=INK,
+        linestyle="--",
+        linewidth=1.2,
+        label=f"alarm threshold (PSI = {PSI_THRESHOLD})",
+    )
+    _style_axes(ax, "Population Stability Index")
+    ax.invert_yaxis()
+    ax.legend(loc="lower right", frameon=False, fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
 # --------------------------------------------------------------------------- #
 # Tab renderers
 # --------------------------------------------------------------------------- #
@@ -397,6 +463,28 @@ def _render_sensor_tab(art: Artifacts) -> None:
     c1.metric("Test RMSE", f"{art.results['rmse']:.1f} cycles")
     c2.metric("Test MAE", f"{art.results['mae']:.1f} cycles")
     c3.metric("NASA Score", f"{art.results['nasa_score']:.0f}")
+
+
+def _render_drift_tab(art: Artifacts) -> None:
+    """Tab 3 — per-sensor PSI vs the training distribution (rule C42)."""
+    st.markdown("**Per-sensor Population Stability Index (PSI)**")
+    st.caption(
+        "PSI measures how far a sensor's recent readings have shifted from the "
+        f"training distribution (under 0.1 = stable · 0.1–{PSI_THRESHOLD} = moderate "
+        f"· above {PSI_THRESHOLD} (red) = significant — re-validate before trusting "
+        "the forecast). Pick a single engine to inspect its own drift."
+    )
+    options = ["All test engines (fleet)"] + [f"Engine {e}" for e in art.engine_ids]
+    choice = st.selectbox("Compare against training", options, key="drift_scope")
+    scope = None if choice.startswith("All") else int(choice.split()[1])
+    drift_df = compute_drift(art.test_df, art.drift_ref, scope)
+    st.pyplot(drift_chart(drift_df))
+
+    alarms = drift_df[drift_df["PSI"] > PSI_THRESHOLD]["sensor"].tolist()
+    if alarms:
+        st.error(f"{len(alarms)} sensor(s) drifted past threshold: {', '.join(alarms)}")
+    else:
+        st.success("All sensors within a stable distribution — no drift alarm.")
 
 
 # --------------------------------------------------------------------------- #
@@ -478,9 +566,10 @@ def main() -> None:
         _render_health_tab(art)
     with tabs[1]:
         _render_sensor_tab(art)
-    for tab in tabs[2:]:
-        with tab:
-            st.info("This view is coming online shortly.")
+    with tabs[2]:
+        _render_drift_tab(art)
+    with tabs[3]:
+        st.info("This view is coming online shortly.")
 
 
 if __name__ == "__main__":
